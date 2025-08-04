@@ -6,8 +6,15 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		ACF367B72E40B019000BEBEA /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ACF367B62E40B019000BEBEA /* AppKit.framework */; };
+		ACF367B92E40B01E000BEBEA /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ACF367B82E40B01E000BEBEA /* Foundation.framework */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		ACF3679F2E409FFA000BEBEA /* libGMmacOSTools.dylib */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = libGMmacOSTools.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
+		ACF367B62E40B019000BEBEA /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
+		ACF367B82E40B01E000BEBEA /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -23,6 +30,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				ACF367B92E40B01E000BEBEA /* Foundation.framework in Frameworks */,
+				ACF367B72E40B019000BEBEA /* AppKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -33,6 +42,7 @@
 			isa = PBXGroup;
 			children = (
 				ACF367A12E409FFA000BEBEA /* GMmacOSTools */,
+				ACF367B52E40B019000BEBEA /* Frameworks */,
 				ACF367A02E409FFA000BEBEA /* Products */,
 			);
 			sourceTree = "<group>";
@@ -43,6 +53,15 @@
 				ACF3679F2E409FFA000BEBEA /* libGMmacOSTools.dylib */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		ACF367B52E40B019000BEBEA /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				ACF367B82E40B01E000BEBEA /* Foundation.framework */,
+				ACF367B62E40B019000BEBEA /* AppKit.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -91,6 +110,7 @@
 				TargetAttributes = {
 					ACF3679E2E409FFA000BEBEA = {
 						CreatedOnToolsVersion = 26.0;
+						LastSwiftMigration = 2600;
 					};
 				};
 			};
@@ -242,6 +262,7 @@
 		ACF367AB2E409FFA000BEBEA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
@@ -249,14 +270,23 @@
 				GCC_ENABLE_CPP_EXCEPTIONS = YES;
 				GCC_ENABLE_CPP_RTTI = YES;
 				GCC_SYMBOLS_PRIVATE_EXTERN = YES;
+				OTHER_LDFLAGS = (
+					"-undefined",
+					dynamic_lookup,
+					"-flat_namespace",
+				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "GMmacOSTools/GMmacOSTools-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
 		ACF367AC2E409FFA000BEBEA /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
@@ -264,8 +294,15 @@
 				GCC_ENABLE_CPP_EXCEPTIONS = YES;
 				GCC_ENABLE_CPP_RTTI = YES;
 				GCC_SYMBOLS_PRIVATE_EXTERN = YES;
+				OTHER_LDFLAGS = (
+					"-undefined",
+					dynamic_lookup,
+					"-flat_namespace",
+				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "GMmacOSTools/GMmacOSTools-Bridging-Header.h";
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
