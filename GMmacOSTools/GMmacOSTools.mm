@@ -187,10 +187,6 @@ static void parseShortcutSpec(NSString *spec,
         else key = p;
     }
 
-    // If no modifier mentioned at all, assume Command
-    if (mask == 0 && key.length)
-        mask = NSEventModifierFlagCommand;
-
     // Named special keys
     NSDictionary *special = @{
         @"return": @"\r",
@@ -281,8 +277,10 @@ gml gm_menu_add_sub_item(const char *parentUID_c,
         NSMenuItem *parent = findItemByUID(NSApp.mainMenu, puid);
         if (!parent) return;                   // parent not found
         
-        if (!parent.submenu)                   // create submenu lazily
+        if (!parent.submenu) {                  // create submenu lazily
             parent.submenu = [[NSMenu alloc] initWithTitle:parent.title];
+            parent.submenu.autoenablesItems = NO;
+        }
         
         NSString *key;
         NSEventModifierFlags mask;
