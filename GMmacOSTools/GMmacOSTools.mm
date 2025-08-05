@@ -145,7 +145,7 @@ static NSMenu *ensureTopMenu(NSString *name)
 // Depth-first search for an NSMenuItem by its UID
 static NSMenuItem *findItemByUID(NSMenu *menu, NSString *uid)
 {
-    NSLog(@"-[findItemByUID] menu=%@ uid=%@", menu, uid);
+    //NSLog(@"-[findItemByUID] menu=%@ uid=%@", menu, uid);
     for (NSMenuItem *it in menu.itemArray)
     {
         if ([it.representedObject isKindOfClass:[NSString class]] &&
@@ -538,4 +538,175 @@ gml gm_window_set_unsaved(const char *path_c, double dirtyFlag, const char *unsa
         }
     });
     return 0;
+}
+
+/*─────────────────────────────────────────────────────────────*
+ * gm_share(path_or_text, isFileFlag)
+ *
+ * path_or_text  • If isFileFlag == 1  → treated as *file path*
+ *               • If isFileFlag == 0  → treated as *plain text*
+ *
+ * Example GML:
+ *     gm_share("C:/screenshots/score.png", 1);   // share a file
+ *     gm_share("I just beat Level 5!",     0);   // share text
+ *
+ * Works from both VM & YYC, sandbox-safe (no extra entitlements).
+ *─────────────────────────────────────────────────────────────*/
+gml gm_share(const char *str_c, double isFile)
+{
+    if (!str_c) return 0;
+
+    /* 1) Convert once, outside the block */
+    NSString *src = [NSString stringWithUTF8String:str_c];
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        id item = nil;
+        if (isFile != 0) {
+            // file → NSURL
+            item = [NSURL fileURLWithPath:src];
+        } else {
+            // plain text
+            item = src;
+        }
+        if (!item) return;
+
+        /* 2) Build and show the system picker */
+        NSSharingServicePicker *picker =
+            [[NSSharingServicePicker alloc] initWithItems:@[item]];
+
+        // Anchor: centre of main window’s content view
+        NSWindow *w = NSApp.keyWindow ?: NSApp.mainWindow;
+        NSView   *view = w.contentView;
+        NSRect    rect = NSMakeRect(view.bounds.size.width * 0.5,
+                                    view.bounds.size.height * 0.5,
+                                    1, 1);
+
+        [picker showRelativeToRect:rect
+                             ofView:view
+                      preferredEdge:NSMinYEdge];
+    });
+    return 0;
+}
+
+@interface NSObject (NBSOpen)
+- (BOOL)application:(NSApplication *)app
+           openFile:(NSString *)path;            // single file
+- (void)application:(NSApplication *)app
+          openFiles:(NSArray<NSString*> *)paths; // multiple files
+@end
+
+@implementation NSObject (NBSOpen)
+- (BOOL)application:(NSApplication *)app openFile:(NSString *)p
+{
+    [self application:app openFiles:@[p]];
+    return YES;                                  // tell macOS we handled it
+}
+
+- (void)application:(NSApplication *)app openFiles:(NSArray<NSString*> *)paths
+{
+    if (!YY_ds_map_create) return;               // dylib not yet patched
+
+    for (NSString *p in paths)
+    {
+        int m = YY_ds_map_create(0);
+        YY_ds_map_add_string(m, "id",   "FILE_OPEN");
+        YY_ds_map_add_string(m, "path", p.UTF8String);
+        YY_event_perform_async(m, YY_EVENT_OTHER_SOCIAL);
+    }
+    [app activateIgnoringOtherApps:YES];         // bring window to front
+}
+@end
+
+/* ---------- tiny helpers to load / save the plist in Application Support --- */
+static NSString *PlistPath(void)
+{
+    NSURL *appSup = [[[NSFileManager defaultManager]
+        URLsForDirectory:NSApplicationSupportDirectory
+               inDomains:NSUserDomainMask] firstObject];
+
+    NSURL *dir = [appSup URLByAppendingPathComponent:
+                 [[NSBundle mainBundle] bundleIdentifier] ?: @"App"];
+    [[NSFileManager defaultManager] createDirectoryAtURL:dir
+                          withIntermediateDirectories:YES
+                                           attributes:nil error:nil];
+    return [[dir URLByAppendingPathComponent:@"bookmarks.plist"].path copy];
+}
+static NSMutableDictionary<NSString*, NSData*> *BookDict(void)
+{
+    static NSMutableDictionary *d;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        /* try to read the on-disk plist */
+        d = [[NSMutableDictionary alloc] initWithContentsOfFile:PlistPath()];
+        if (!d) d = [NSMutableDictionary new];          // fallback if file missing
+    });
+    return d;
+}
+static void Save(void) { [BookDict() writeToFile:PlistPath() atomically:YES]; }
+
+/* ----------  gml bookmark_store(pathOrURL, key, readOnlyFlag) -------------- */
+gml bookmark_store(const char *path_c, const char *key_c, double readOnly)
+{
+    if (!path_c || !key_c) return 0;
+
+    NSString *key  = [NSString stringWithUTF8String:key_c];
+    NSString *str  = [NSString stringWithUTF8String:path_c];
+
+    NSURL *url = [str hasPrefix:@"file://"]
+               ? [NSURL URLWithString:str]          // already a file URL
+               : [NSURL fileURLWithPath:str];       // plain path
+
+    if (!url.isFileURL) return 0;                   // refuse http:// etc.
+
+    NSURLBookmarkCreationOptions opt =
+        NSURLBookmarkCreationWithSecurityScope |
+        (readOnly ? NSURLBookmarkCreationSecurityScopeAllowOnlyReadAccess : 0);
+
+    NSData *bm = [url bookmarkDataWithOptions:opt
+             includingResourceValuesForKeys:nil
+                              relativeToURL:nil
+                                      error:nil];
+    if (!bm) return 0;
+
+    BookDict()[key] = bm; Save();
+    return 1;
+}
+
+/* ----------  gml bookmark_begin(key)  → 1/0 ------------------------------- */
+gml bookmark_begin(const char *key_c)
+{
+    NSString *key = key_c ? [NSString stringWithUTF8String:key_c] : @"default";
+    NSData *bm = BookDict()[key]; if (!bm) return 0;
+
+    BOOL stale = NO; NSError *err = nil;
+    NSURL *url = [NSURL URLByResolvingBookmarkData:bm
+                                           options:NSURLBookmarkResolutionWithSecurityScope
+                                     relativeToURL:nil
+                               bookmarkDataIsStale:&stale
+                                             error:&err];
+    if (!url) return 0;
+    if (stale)                                      // refresh for next time
+        if (NSData *nb = [url bookmarkDataWithOptions:
+                          NSURLBookmarkCreationWithSecurityScope
+        includingResourceValuesForKeys:nil relativeToURL:nil error:nil])
+            { BookDict()[key]=nb; Save(); }
+
+    return [url startAccessingSecurityScopedResource] ? 1 : 0;
+}
+
+/* ----------  gml bookmark_end(key)  --------------------------------------- */
+gml bookmark_end(const char *key_c)
+{
+    NSString *key = key_c ? [NSString stringWithUTF8String:key_c] : @"default";
+    NSData *bm = BookDict()[key]; if (!bm) return 0;
+
+    BOOL stale = NO;
+    NSURL *url = [NSURL URLByResolvingBookmarkData:bm
+                                           options:NSURLBookmarkResolutionWithSecurityScope
+                                     relativeToURL:nil
+                               bookmarkDataIsStale:&stale
+                                             error:nil];
+    if (!url) return 0;
+    [url stopAccessingSecurityScopedResource];
+    return 1;
 }
