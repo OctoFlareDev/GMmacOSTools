@@ -708,3 +708,76 @@ gml bookmark_end(const char *key_c)
     [url stopAccessingSecurityScopedResource];
     return 1;
 }
+
+/* ---------- queue for pending URLs (lives inside the dylib) ---------- */
+static NSMutableArray<NSString*> *gURLQueue;
+static inline void enqueueURLs(NSArray<NSURL*> *urls) {
+    if (!gURLQueue) gURLQueue = [NSMutableArray new];
+    for (NSURL *u in urls) {
+        if (!u) continue;
+        // (optional) filter scheme:
+        //if (![[u.scheme lowercaseString] isEqualToString:@"nbs"]) continue;
+        [gURLQueue addObject:u.absoluteString ?: @""];
+    }
+}
+
+/* ---------- catch URL-opens via a category on the app delegate -------- */
+@interface NSObject (GMURLSchemeOpen)
+- (void)application:(NSApplication *)app openURLs:(NSArray<NSURL*> *)urls;
+@end
+
+@implementation NSObject (GMURLSchemeOpen)
+- (void)application:(NSApplication *)app openURLs:(NSArray<NSURL*> *)urls
+{
+    if (!gURLQueue) gURLQueue = [NSMutableArray new];
+
+    for (NSURL *u in urls) {
+        if (!u) continue;
+
+        NSURL *std = [u URLByStandardizingPath];          // normalize ./.. etc.
+        NSString *readable = nil;
+
+        if (std.isFileURL) {
+            // Files → POSIX path (already percent-decoded)
+            readable = std.path;
+        } else {
+            // Non-file schemes → percent-decoded for readability
+            NSString *raw = std.absoluteString ?: @"";
+            readable = raw;
+            // If you want '+' to show as space in queries, uncomment:
+            // readable = [readable stringByReplacingOccurrencesOfString:@"+" withString:@" "];
+        }
+
+        [gURLQueue addObject:readable ?: @""];
+    }
+
+    [app activateIgnoringOtherApps:YES];  // bring to front
+}
+@end
+
+/* ---------- externs for GML to poll without callbacks ---------------- */
+
+/* Pop one URL from the queue; returns "" if empty */
+extern "C" __attribute__((visibility("default")))
+const char* gm_url_take_pending(void)
+{
+    static NSString *ret = nil;
+    if (!gURLQueue || gURLQueue.count == 0) {
+        ret = @"";
+    } else {
+        ret = gURLQueue.firstObject;
+        [gURLQueue removeObjectAtIndex:0];
+    }
+    return ret.UTF8String;  // GM copies immediately
+}
+
+/* Optional: how many are queued */
+extern "C" __attribute__((visibility("default")))
+double gm_url_pending_count(void)
+{
+    return gURLQueue ? (double)gURLQueue.count : 0.0;
+}
+
+/* Optional but nice: ensure queue exists as soon as the dylib loads */
+__attribute__((constructor))
+static void GMURL_init(void) { gURLQueue = [NSMutableArray new]; }
