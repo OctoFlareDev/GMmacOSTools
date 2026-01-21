@@ -7,11 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		ACD51C872F20375C00A58BC2 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ACD51C862F20375C00A58BC2 /* Cocoa.framework */; };
 		ACF367B72E40B019000BEBEA /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ACF367B62E40B019000BEBEA /* AppKit.framework */; };
 		ACF367B92E40B01E000BEBEA /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ACF367B82E40B01E000BEBEA /* Foundation.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		ACD51C862F20375C00A58BC2 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
 		ACF3679F2E409FFA000BEBEA /* libGMmacOSTools.dylib */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = libGMmacOSTools.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
 		ACF367B62E40B019000BEBEA /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
 		ACF367B82E40B01E000BEBEA /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
@@ -32,6 +34,7 @@
 			files = (
 				ACF367B92E40B01E000BEBEA /* Foundation.framework in Frameworks */,
 				ACF367B72E40B019000BEBEA /* AppKit.framework in Frameworks */,
+				ACD51C872F20375C00A58BC2 /* Cocoa.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -58,6 +61,7 @@
 		ACF367B52E40B019000BEBEA /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				ACD51C862F20375C00A58BC2 /* Cocoa.framework */,
 				ACF367B82E40B01E000BEBEA /* Foundation.framework */,
 				ACF367B62E40B019000BEBEA /* AppKit.framework */,
 			);

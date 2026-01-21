@@ -9,6 +9,7 @@
 
 #import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
+#import <Cocoa/Cocoa.h>
 
 // ─────────────────────────────────────────────────────────────
 //  0.  De-clare our runner-function pointers
@@ -781,3 +782,93 @@ double gm_url_pending_count(void)
 /* Optional but nice: ensure queue exists as soon as the dylib loads */
 __attribute__((constructor))
 static void GMURL_init(void) { gURLQueue = [NSMutableArray new]; }
+
+static double g_dx = 0.0;
+static double g_dy = 0.0;
+static bool   g_started = false;
+static bool   g_ended = false;
+static bool   g_trackpad = false;
+static bool   g_available = false;
+
+// Scroll stuff
+
+@interface GMScrollView : NSView
+@end
+
+@implementation GMScrollView
+
+- (BOOL)acceptsFirstResponder {
+    return NO;
+}
+
+- (void)scrollWheel:(NSEvent *)event {
+    if (event.phase == NSEventPhaseBegan) {
+        g_started = true;
+    }
+    
+    g_trackpad = event.hasPreciseScrollingDeltas;
+    g_dx += event.scrollingDeltaX;
+    g_dy += event.scrollingDeltaY;
+    g_available = true;
+
+    if (event.phase == NSEventPhaseEnded ||
+        event.momentumPhase == NSEventPhaseEnded) {
+        g_ended = true;
+    }
+}
+
+@end
+
+static GMScrollView *g_view = nil;
+
+extern "C" {
+
+void gm_scroll_init() {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSWindow *window = [NSApp mainWindow];
+        if (!window) return;
+
+        NSView *content = [window contentView];
+
+        g_view = [[GMScrollView alloc] initWithFrame:[content bounds]];
+        [g_view setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+
+        [content addSubview:g_view];
+    });
+}
+
+double gm_scroll_dx() {
+    double v = g_dx;
+    g_dx = 0.0;
+    return v;
+}
+
+double gm_scroll_dy() {
+    double v = g_dy;
+    g_dy = 0.0;
+    return v;
+}
+
+double gm_scroll_available() {
+    bool v = g_available;
+    g_available = false;
+    return v ? 1.0 : 0.0;
+}
+
+double gm_scroll_started() {
+    bool v = g_started;
+    g_started = false;
+    return v ? 1.0 : 0.0;
+}
+
+double gm_scroll_ended() {
+    bool v = g_ended;
+    g_ended = false;
+    return v ? 1.0 : 0.0;
+}
+
+double gm_scroll_is_trackpad() {
+    return g_trackpad ? 1.0 : 0.0;
+}
+
+}
