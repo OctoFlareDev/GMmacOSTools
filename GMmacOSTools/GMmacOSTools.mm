@@ -872,3 +872,8 @@ double gm_scroll_is_trackpad() {
 }
 
 }
+
+extern "C" const char *gm_music_dir(void) {
+    NSString *p = NSSearchPathForDirectoriesInDomains(NSMusicDirectory, NSUserDomainMask, YES).firstObject;
+    return strdup(p.fileSystemRepresentation);
+}
