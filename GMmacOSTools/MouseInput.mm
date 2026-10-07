@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <mutex>
 
+void gm_install_lifecycle_hooks(NSWindow *window);
+
 namespace {
 std::mutex mouseMutex;
 gm_input::MouseInputQueue mouseQueue;
@@ -56,6 +58,7 @@ extern "C" double gm_mouse_start() {
             }
         }
         if (!window || !window.contentView) return;
+        gm_install_lifecycle_hooks(window);
         mouseWindow = window;
         previousAcceptsMoved = window.acceptsMouseMovedEvents;
         window.acceptsMouseMovedEvents = YES;

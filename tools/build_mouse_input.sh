@@ -9,7 +9,7 @@ xcrun clang++ -std=c++17 -Wall -Wextra -Werror \
 "$BUILD_ROOT/mouse-input-tests"
 for BUILD_ARCH in arm64 x86_64; do
     xcrun clang++ -std=c++17 -fobjc-arc -dynamiclib -arch "$BUILD_ARCH" \
-        -mmacosx-version-min=12.0 -framework Cocoa -framework Foundation \
+        -mmacosx-version-min=12.0 -framework Cocoa -framework Foundation -framework Security \
         "$SOURCE_ROOT/GMmacOSTools/GMmacOSTools.mm" \
         "$SOURCE_ROOT/GMmacOSTools/MouseInput.mm" \
         -install_name @rpath/libGMmacOSTools.dylib \

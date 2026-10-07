@@ -10,6 +10,7 @@
 		ACD51C872F20375C00A58BC2 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ACD51C862F20375C00A58BC2 /* Cocoa.framework */; };
 		ACF367B72E40B019000BEBEA /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ACF367B62E40B019000BEBEA /* AppKit.framework */; };
 		ACF367B92E40B01E000BEBEA /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ACF367B82E40B01E000BEBEA /* Foundation.framework */; };
+		B8C742A5CB071EA300A81E01 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B8C742A5CB071EA300A81E02 /* Security.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -17,6 +18,7 @@
 		ACF3679F2E409FFA000BEBEA /* libGMmacOSTools.dylib */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = libGMmacOSTools.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
 		ACF367B62E40B019000BEBEA /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
 		ACF367B82E40B01E000BEBEA /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		B8C742A5CB071EA300A81E02 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -35,6 +37,7 @@
 				ACF367B92E40B01E000BEBEA /* Foundation.framework in Frameworks */,
 				ACF367B72E40B019000BEBEA /* AppKit.framework in Frameworks */,
 				ACD51C872F20375C00A58BC2 /* Cocoa.framework in Frameworks */,
+				B8C742A5CB071EA300A81E01 /* Security.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -64,6 +67,7 @@
 				ACD51C862F20375C00A58BC2 /* Cocoa.framework */,
 				ACF367B82E40B01E000BEBEA /* Foundation.framework */,
 				ACF367B62E40B019000BEBEA /* AppKit.framework */,
+				B8C742A5CB071EA300A81E02 /* Security.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";

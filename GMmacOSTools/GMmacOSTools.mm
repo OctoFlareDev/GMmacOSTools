@@ -10,6 +10,8 @@
 #import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
 #import <Cocoa/Cocoa.h>
+#import <Security/Security.h>
+#include <atomic>
 
 // ─────────────────────────────────────────────────────────────
 //  0.  De-clare our runner-function pointers
@@ -48,6 +50,80 @@ extern "C" {
     void gml_event_perform_async(int map, int event_type);
 }
 static const int EVENT_OTHER_SOCIAL = 70;
+
+// Keep AppKit's normal quit/close requests cancellable until GML has checked
+// every song. Forward all other delegate messages to the runner unchanged.
+static std::atomic<bool> gQuitPending{false};
+static std::atomic<bool> gQuitApproved{false};
+
+static void requestGMLQuit() {
+    if (!gQuitPending.exchange(true)) {
+        int map = YY_ds_map_create(0);
+        YY_ds_map_add_string(map, "id", "GM_MENU");
+        YY_ds_map_add_string(map, "uid", "app_quit");
+        YY_ds_map_add_string(map, "title", "Quit");
+        YY_event_perform_async(map, YY_EVENT_OTHER_SOCIAL);
+    }
+}
+
+@interface GMLifecycleProxy : NSProxy <NSApplicationDelegate, NSWindowDelegate>
+@property(strong) id forwardingDelegate;
+@end
+
+@implementation GMLifecycleProxy
+- (BOOL)respondsToSelector:(SEL)selector {
+    return selector == @selector(applicationShouldTerminate:) ||
+           selector == @selector(windowShouldClose:) ||
+           [self.forwardingDelegate respondsToSelector:selector];
+}
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)selector {
+    return [self.forwardingDelegate methodSignatureForSelector:selector];
+}
+- (void)forwardInvocation:(NSInvocation *)invocation {
+    [invocation invokeWithTarget:self.forwardingDelegate];
+}
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)app {
+    if (!gQuitApproved) {
+        requestGMLQuit();
+        return NSTerminateCancel;
+    }
+    return [self.forwardingDelegate respondsToSelector:_cmd]
+        ? [self.forwardingDelegate applicationShouldTerminate:app] : NSTerminateNow;
+}
+- (BOOL)windowShouldClose:(NSWindow *)window {
+    if (!gQuitApproved) {
+        requestGMLQuit();
+        return NO;
+    }
+    return ![self.forwardingDelegate respondsToSelector:_cmd] ||
+        [self.forwardingDelegate windowShouldClose:window];
+}
+@end
+
+static GMLifecycleProxy *gApplicationProxy;
+static GMLifecycleProxy *gWindowProxy;
+
+void gm_install_lifecycle_hooks(NSWindow *window) {
+    if (!YY_ds_map_create || !YY_ds_map_add_string || !YY_event_perform_async) return;
+    if (!gApplicationProxy || NSApp.delegate != gApplicationProxy) {
+        GMLifecycleProxy *proxy = [GMLifecycleProxy alloc];
+        proxy.forwardingDelegate = NSApp.delegate;
+        gApplicationProxy = proxy;
+        NSApp.delegate = proxy;
+    }
+    if (!gWindowProxy || window.delegate != gWindowProxy) {
+        GMLifecycleProxy *proxy = [GMLifecycleProxy alloc];
+        proxy.forwardingDelegate = window.delegate;
+        gWindowProxy = proxy;
+        window.delegate = proxy;
+    }
+}
+
+gml gm_quit_reply(double approved) {
+    gQuitApproved = approved != 0;
+    gQuitPending = false;
+    return 1;
+}
 
 // Track which top-level menus WE have created so we can clean them later
 static NSMutableSet<NSString *> *gCustomMenuTitles;
@@ -710,6 +786,94 @@ gml bookmark_end(const char *key_c)
     return 1;
 }
 
+// Keep the folder panel in the app process so its sandbox grant covers exports.
+extern "C" const char *gm_choose_directory(const char *title_c)
+{
+    static NSString *selectedPath = @"";
+    auto choose = ^{
+        NSOpenPanel *panel = [NSOpenPanel openPanel];
+        panel.message = [NSString stringWithUTF8String:title_c];
+        panel.canChooseFiles = NO;
+        panel.canChooseDirectories = YES;
+        panel.canCreateDirectories = YES;
+        panel.allowsMultipleSelection = NO;
+        selectedPath = [panel runModal] == NSModalResponseOK ? panel.URL.path : @"";
+    };
+    if (NSThread.isMainThread) choose();
+    else dispatch_sync(dispatch_get_main_queue(), choose);
+    return selectedPath.UTF8String;
+}
+
+// A Save-panel grant covers the selected file, not arbitrary .tmp/.bak siblings.
+// Foundation supplies a replacement directory on its volume and coordinates the
+// commit. Keep a verified previous copy in the app container until it succeeds.
+gml gm_replace_file(const char *source_c, const char *destination_c, const char *backup_c)
+{
+    @autoreleasepool {
+        NSURL *source = [NSURL fileURLWithPath:@(source_c)];
+        NSURL *destination = [NSURL fileURLWithPath:@(destination_c)];
+        NSURL *backup = [NSURL fileURLWithPath:@(backup_c)];
+        NSData *bytes = [NSData dataWithContentsOfURL:source];
+        if (!bytes) return 0;
+
+        NSURL *scope = nil;
+        NSData *bookmark = BookDict()[destination.path];
+        if (bookmark) scope = [NSURL URLByResolvingBookmarkData:bookmark
+            options:NSURLBookmarkResolutionWithSecurityScope relativeToURL:nil
+            bookmarkDataIsStale:nil error:nil];
+        BOOL scoped = [scope startAccessingSecurityScopedResource];
+
+        NSFileManager *manager = NSFileManager.defaultManager;
+        NSFileCoordinator *coordinator = [[NSFileCoordinator alloc] initWithFilePresenter:nil];
+        __block BOOL succeeded = NO;
+        __block NSURL *replacementDirectory = nil;
+        __block NSError *error = nil;
+        NSError *coordinationError = nil;
+        [coordinator coordinateWritingItemAtURL:destination options:NSFileCoordinatorWritingForReplacing
+            error:&coordinationError byAccessor:^(NSURL *target) {
+                BOOL existed = [manager fileExistsAtPath:target.path];
+                NSData *previous = existed ? [NSData dataWithContentsOfURL:target] : nil;
+                if (existed && (!previous ||
+                    ![previous writeToURL:backup options:NSDataWritingWithoutOverwriting error:&error] ||
+                    ![[NSData dataWithContentsOfURL:backup] isEqualToData:previous])) return;
+
+                replacementDirectory = [manager URLForDirectory:NSItemReplacementDirectory
+                    inDomain:NSUserDomainMask appropriateForURL:target create:YES error:&error];
+                NSURL *staged = [replacementDirectory URLByAppendingPathComponent:@"payload"];
+                BOOL ready = staged && [bytes writeToURL:staged options:NSDataWritingWithoutOverwriting error:&error]
+                    && [[NSData dataWithContentsOfURL:staged] isEqualToData:bytes];
+                BOOL installed = NO;
+                if (ready) {
+                    installed = existed
+                        ? [manager replaceItemAtURL:target withItemAtURL:staged backupItemName:nil
+                            options:0 resultingItemURL:nil error:&error]
+                        : [manager moveItemAtURL:staged toURL:target error:&error];
+                }
+                succeeded = installed && [[NSData dataWithContentsOfURL:target] isEqualToData:bytes];
+                if (previous) {
+                    BOOL restored = !succeeded && [[NSData dataWithContentsOfURL:target] isEqualToData:previous];
+                    if (!succeeded && !restored) {
+                        restored = [previous writeToURL:target options:NSDataWritingAtomic error:&error]
+                            && [[NSData dataWithContentsOfURL:target] isEqualToData:previous];
+                    }
+                    if (succeeded || restored) [manager removeItemAtURL:backup error:nil];
+                    else NSLog(@"Save rollback failed; previous file retained at %@", backup.path);
+                } else if (installed && !succeeded) {
+                    [manager removeItemAtURL:target error:nil];
+                }
+            }];
+        if (replacementDirectory) [manager removeItemAtURL:replacementDirectory error:nil];
+        // Recovery snapshots and audio intermediates already live in the
+        // container; do not accumulate persistent bookmarks for temporary files.
+        if (succeeded) {
+            if (![destination.path hasPrefix:[NSHomeDirectory() stringByAppendingString:@"/"]])
+                bookmark_store(destination_c, destination_c, 0);
+        } else NSLog(@"Could not save %@: %@", destination.path, error ?: coordinationError);
+        if (scoped) [scope stopAccessingSecurityScopedResource];
+        return succeeded ? 1 : 0;
+    }
+}
+
 /* ---------- queue for pending URLs (lives inside the dylib) ---------- */
 static NSMutableArray<NSString*> *gURLQueue;
 static inline void enqueueURLs(NSArray<NSURL*> *urls) {
@@ -876,4 +1040,42 @@ double gm_scroll_is_trackpad() {
 extern "C" const char *gm_music_dir(void) {
     NSString *p = NSSearchPathForDirectoriesInDomains(NSMusicDirectory, NSUserDomainMask, YES).firstObject;
     return strdup(p.fileSystemRepresentation);
+}
+
+static bool gm_self_matches_requirement(SecCodeRef code, CFStringRef expression) {
+    SecRequirementRef requirement = nullptr;
+    if (SecRequirementCreateWithString(expression, kSecCSDefaultFlags, &requirement) != errSecSuccess)
+        return false;
+
+    bool matches = SecCodeCheckValidity(code, kSecCSDefaultFlags, requirement) == errSecSuccess;
+    CFRelease(requirement);
+    return matches;
+}
+
+// The receipt filename is "receipt" in macOS TestFlight as well as App Store installs.
+// Match the running app's verified signing identity instead of inferring its channel
+// from the filename or the version's prerelease flag.
+extern "C" const char *gm_distribution_channel(void) {
+    static const char *channel = []() -> const char * {
+        SecCodeRef code = nullptr;
+        if (SecCodeCopySelf(kSecCSDefaultFlags, &code) != errSecSuccess)
+            return "unknown";
+
+        const char *result = "unknown";
+        if (gm_self_matches_requirement(code, CFSTR(
+                "anchor apple generic and certificate leaf[subject.CN] = \"TestFlight Beta Distribution\""))) {
+            result = "testflight";
+        } else if (gm_self_matches_requirement(code, CFSTR(
+                "anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists "
+                "and certificate leaf[field.1.2.840.113635.100.6.1.13] exists"))) {
+            result = "direct";
+        } else if (gm_self_matches_requirement(code, CFSTR(
+                "anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.9] exists"))) {
+            result = "app_store";
+        }
+
+        CFRelease(code);
+        return result;
+    }();
+    return channel;
 }
