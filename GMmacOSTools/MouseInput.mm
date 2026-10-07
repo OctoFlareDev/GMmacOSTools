@@ -117,11 +117,13 @@ extern "C" double gm_mouse_start() {
 extern "C" const char *gm_mouse_poll() {
     std::lock_guard<std::mutex> lock(mouseMutex);
     auto frame = mouseQueue.step(NSProcessInfo.processInfo.systemUptime);
+    // Screenshot overlays can swallow Command's release event.
+    bool command = (NSEvent.modifierFlags & NSEventModifierFlagCommand) != 0;
     std::snprintf(mouseSnapshot, sizeof(mouseSnapshot),
         "{\"ready\":%d,\"valid\":%d,\"x\":%.17g,\"y\":%.17g,"
-        "\"held\":%u,\"pressed\":%u,\"released\":%u,\"cancelled\":%d}",
+        "\"held\":%u,\"pressed\":%u,\"released\":%u,\"cancelled\":%d,\"command\":%d}",
         mouseReady, frame.valid, frame.x, frame.y,
-        frame.held, frame.pressed, frame.released, frame.cancelled);
+        frame.held, frame.pressed, frame.released, frame.cancelled, command);
     return mouseSnapshot;
 }
 
