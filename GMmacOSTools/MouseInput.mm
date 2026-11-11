@@ -58,6 +58,10 @@ extern "C" double gm_mouse_start() {
             }
         }
         if (!window || !window.contentView) return;
+        // The LTS runner leaves the green title-bar button disabled even when
+        // native fullscreen switching is available through the keyboard.
+        window.collectionBehavior |= NSWindowCollectionBehaviorFullScreenPrimary;
+        [window standardWindowButton:NSWindowZoomButton].enabled = YES;
         gm_install_lifecycle_hooks(window);
         mouseWindow = window;
         previousAcceptsMoved = window.acceptsMouseMovedEvents;

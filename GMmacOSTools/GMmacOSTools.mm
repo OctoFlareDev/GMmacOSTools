@@ -71,6 +71,7 @@ static void requestGMLQuit() {
 
 static char gApplicationQuitHook;
 static char gWindowCloseHook;
+static char gFullScreenPresentationHook;
 
 void gm_install_lifecycle_hooks(NSWindow *window) {
     if (!YY_ds_map_create || !YY_ds_map_add_string || !YY_event_perform_async) return;
@@ -106,6 +107,23 @@ void gm_install_lifecycle_hooks(NSWindow *window) {
         std::string types = std::string(@encode(BOOL)) + "@:@";
         class_replaceMethod(windowClass, selector, replacement, method ? method_getTypeEncoding(method) : types.c_str());
         objc_setAssociatedObject(windowClass, &gWindowCloseHook, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+
+    if (windowClass && !objc_getAssociatedObject(windowClass, &gFullScreenPresentationHook)) {
+        SEL selector = @selector(window:willUseFullScreenPresentationOptions:);
+        Method method = class_getInstanceMethod(windowClass, selector);
+        auto original = method ? reinterpret_cast<NSApplicationPresentationOptions (*)(id, SEL, NSWindow *, NSApplicationPresentationOptions)>(method_getImplementation(method)) : nullptr;
+        IMP replacement = imp_implementationWithBlock(^NSApplicationPresentationOptions(id receiver, NSWindow *sender, NSApplicationPresentationOptions proposed) {
+            NSApplicationPresentationOptions options = original ? original(receiver, selector, sender, proposed) : proposed;
+            // HideMenuBar makes the menu bar unavailable, including at the top
+            // edge. Use AppKit's native rollover reveal for menus and controls.
+            options &= ~NSApplicationPresentationHideMenuBar;
+            options |= NSApplicationPresentationAutoHideMenuBar | NSApplicationPresentationAutoHideToolbar;
+            return options;
+        });
+        std::string types = std::string(@encode(NSApplicationPresentationOptions)) + "@:@" + @encode(NSApplicationPresentationOptions);
+        class_replaceMethod(windowClass, selector, replacement, method ? method_getTypeEncoding(method) : types.c_str());
+        objc_setAssociatedObject(windowClass, &gFullScreenPresentationHook, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
 }
 
