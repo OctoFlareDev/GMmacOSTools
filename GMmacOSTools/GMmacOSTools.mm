@@ -11,6 +11,8 @@
 #import <Foundation/Foundation.h>
 #import <Cocoa/Cocoa.h>
 #import <Security/Security.h>
+#import <objc/runtime.h>
+#include <string>
 #include <atomic>
 
 // ─────────────────────────────────────────────────────────────
@@ -52,7 +54,8 @@ extern "C" {
 static const int EVENT_OTHER_SOCIAL = 70;
 
 // Keep AppKit's normal quit/close requests cancellable until GML has checked
-// every song. Forward all other delegate messages to the runner unchanged.
+// every song. Keep the runner's delegate objects in place: replacing them with
+// forwarding proxies corrupts its render-view frame during native fullscreen.
 static std::atomic<bool> gQuitPending{false};
 static std::atomic<bool> gQuitApproved{false};
 
@@ -66,56 +69,43 @@ static void requestGMLQuit() {
     }
 }
 
-@interface GMLifecycleProxy : NSProxy <NSApplicationDelegate, NSWindowDelegate>
-@property(strong) id forwardingDelegate;
-@end
-
-@implementation GMLifecycleProxy
-- (BOOL)respondsToSelector:(SEL)selector {
-    return selector == @selector(applicationShouldTerminate:) ||
-           selector == @selector(windowShouldClose:) ||
-           [self.forwardingDelegate respondsToSelector:selector];
-}
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)selector {
-    return [self.forwardingDelegate methodSignatureForSelector:selector];
-}
-- (void)forwardInvocation:(NSInvocation *)invocation {
-    [invocation invokeWithTarget:self.forwardingDelegate];
-}
-- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)app {
-    if (!gQuitApproved) {
-        requestGMLQuit();
-        return NSTerminateCancel;
-    }
-    return [self.forwardingDelegate respondsToSelector:_cmd]
-        ? [self.forwardingDelegate applicationShouldTerminate:app] : NSTerminateNow;
-}
-- (BOOL)windowShouldClose:(NSWindow *)window {
-    if (!gQuitApproved) {
-        requestGMLQuit();
-        return NO;
-    }
-    return ![self.forwardingDelegate respondsToSelector:_cmd] ||
-        [self.forwardingDelegate windowShouldClose:window];
-}
-@end
-
-static GMLifecycleProxy *gApplicationProxy;
-static GMLifecycleProxy *gWindowProxy;
+static char gApplicationQuitHook;
+static char gWindowCloseHook;
 
 void gm_install_lifecycle_hooks(NSWindow *window) {
     if (!YY_ds_map_create || !YY_ds_map_add_string || !YY_event_perform_async) return;
-    if (!gApplicationProxy || NSApp.delegate != gApplicationProxy) {
-        GMLifecycleProxy *proxy = [GMLifecycleProxy alloc];
-        proxy.forwardingDelegate = NSApp.delegate;
-        gApplicationProxy = proxy;
-        NSApp.delegate = proxy;
+    Class appClass = object_getClass(NSApp.delegate);
+    if (appClass && !objc_getAssociatedObject(appClass, &gApplicationQuitHook)) {
+        SEL selector = @selector(applicationShouldTerminate:);
+        Method method = class_getInstanceMethod(appClass, selector);
+        auto original = method ? reinterpret_cast<NSApplicationTerminateReply (*)(id, SEL, NSApplication *)>(method_getImplementation(method)) : nullptr;
+        IMP replacement = imp_implementationWithBlock(^NSApplicationTerminateReply(id receiver, NSApplication *app) {
+            if (!gQuitApproved) {
+                requestGMLQuit();
+                return NSTerminateCancel;
+            }
+            return original ? original(receiver, selector, app) : NSTerminateNow;
+        });
+        std::string types = std::string(@encode(NSApplicationTerminateReply)) + "@:@";
+        class_replaceMethod(appClass, selector, replacement, method ? method_getTypeEncoding(method) : types.c_str());
+        objc_setAssociatedObject(appClass, &gApplicationQuitHook, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
-    if (!gWindowProxy || window.delegate != gWindowProxy) {
-        GMLifecycleProxy *proxy = [GMLifecycleProxy alloc];
-        proxy.forwardingDelegate = window.delegate;
-        gWindowProxy = proxy;
-        window.delegate = proxy;
+
+    Class windowClass = object_getClass(window.delegate);
+    if (windowClass && !objc_getAssociatedObject(windowClass, &gWindowCloseHook)) {
+        SEL selector = @selector(windowShouldClose:);
+        Method method = class_getInstanceMethod(windowClass, selector);
+        auto original = method ? reinterpret_cast<BOOL (*)(id, SEL, NSWindow *)>(method_getImplementation(method)) : nullptr;
+        IMP replacement = imp_implementationWithBlock(^BOOL(id receiver, NSWindow *sender) {
+            if (!gQuitApproved) {
+                requestGMLQuit();
+                return NO;
+            }
+            return original ? original(receiver, selector, sender) : YES;
+        });
+        std::string types = std::string(@encode(BOOL)) + "@:@";
+        class_replaceMethod(windowClass, selector, replacement, method ? method_getTypeEncoding(method) : types.c_str());
+        objc_setAssociatedObject(windowClass, &gWindowCloseHook, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
 }
 
